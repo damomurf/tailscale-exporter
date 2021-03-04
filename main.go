@@ -48,22 +48,13 @@ var (
 	debug    = flag.Bool("debug", false, "Debug output")
 )
 
-func b2f(b bool) float64 {
-	set := 1.0
-	if b {
-		set = 0.0
-	}
-	return set
-
-}
-
 func debugf(fmt string, args ...interface{}) {
 	if *debug {
 		log.Printf(fmt, args...)
 	}
 }
 
-func fetchDevices(tailnet, key string) error {
+func fetchDevices(metrics *metrics, tailnet, key string) error {
 
 	client := &http.Client{
 		Timeout: time.Second * 10,
@@ -81,25 +72,24 @@ func fetchDevices(tailnet, key string) error {
 	}
 	defer response.Body.Close()
 
-	if response.StatusCode == http.StatusOK {
-
-		buf, err := ioutil.ReadAll(response.Body)
-		if err != nil {
-			return errors.Wrap(err, "reading response body")
-		}
-
-		tnet := &Tailnet{}
-
-		if err := json.Unmarshal(buf, tnet); err != nil {
-			return errors.Wrap(err, "parsing JSON")
-		}
-
-		for _, device := range tnet.Devices {
-			generateMetrics(device)
-			debugf("%+v\n", device)
-		}
-	} else {
+	if response.StatusCode != http.StatusOK {
 		return errors.Errorf("Tailscale API request returned unexpected status code: %d - %s", response.StatusCode, response.Status)
+	}
+
+	buf, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return errors.Wrap(err, "reading response body")
+	}
+
+	tnet := &Tailnet{}
+
+	if err := json.Unmarshal(buf, tnet); err != nil {
+		return errors.Wrap(err, "parsing JSON")
+	}
+
+	for _, device := range tnet.Devices {
+		metrics.generateMetrics(device)
+		debugf("%+v\n", device)
 	}
 
 	return nil
@@ -115,22 +105,23 @@ func main() {
 		os.Exit(1)
 	}
 
-	registerMetrics()
+	metrics := &metrics{}
 
-	if err := fetchDevices(*tailnet, *token); err != nil {
+	if err := fetchDevices(metrics, *tailnet, *token); err != nil {
 		log.Printf("Error fetching devices: %+v", err)
 	}
 
 	go func() {
 		c := time.Tick(*interval)
 		for range c {
-			if err := fetchDevices(*tailnet, *token); err != nil {
+			if err := fetchDevices(metrics, *tailnet, *token); err != nil {
 				log.Printf("Error fetching devices: %+v", err)
 			}
 		}
 	}()
 
-	http.Handle("/metrics", metricsHandler())
+	http.Handle("/metrics", metrics.metricsHandler())
+	log.Printf("Listening on: %s\n", *addr)
 	log.Fatal(http.ListenAndServe(*addr, nil))
 
 }
