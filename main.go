@@ -59,7 +59,7 @@ func b2f(b bool) float64 {
 
 func debugf(fmt string, args ...interface{}) {
 	if *debug {
-		log.Printf(fmt, args)
+		log.Printf(fmt, args...)
 	}
 }
 

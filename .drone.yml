@@ -1,0 +1,26 @@
+kind: pipeline
+type: kubernetes
+name: default
+
+clone:
+  skip_verify: true
+
+steps:
+
+- name: build
+  image: golang
+  environment:
+    CGO_ENABLED: 0
+  commands:
+  - go test
+  - go build
+
+- name: docker  
+  image: plugins/docker
+  settings:
+    repo: registry.murf.org/damian/tailscale-exporter
+    registry: registry.murf.org
+    insecure: true
+    tags:
+      - latest
+      - ${DRONE_COMMIT}
